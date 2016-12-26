@@ -1,0 +1,195 @@
+﻿<!doctype html>
+<html>
+
+<head>
+	<style>
+		text, a {
+			pointer-events: none;
+			font: 10px sans-serif;
+		}
+
+		.links line {
+			stroke: #999;
+			stroke-opacity: 0.6;
+		}
+
+		.nodes circle {
+			stroke: #fff;
+			stroke-width: 1.5px;
+		}
+	</style>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.4.0/d3.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/pegasus/0.3.2/pegasus.min.js"></script>
+</head>
+<body>
+	<table>
+		<tr>
+			<form method="post" asp-action="Upload" asp-controller="Home" enctype="multipart/form-data">
+				<td>
+					<input type="file" name="file" />
+				</td>
+				<td>
+					<input type="submit" value="Загрузить" />
+				</td>
+			</form>
+			<td>
+				<input type="button" value="Скачать" onclick="location.href = '@Url.Action("Download", "Home")'" />
+			</td>
+		</tr>
+	</table>
+
+
+	<svg width="1200" height="1000"></svg>
+
+	<script>
+		// Константы
+		const DATA_JSON_URL = 'home/Render';
+		const REMOVE_STATION_INTERVAL = 1000;
+		const REMOVE_STATION_DELAY = 3000;
+
+		// Глобальные переменные
+		var nodes = {};
+		var removedStations = [];
+
+		// Создание холста
+		var svg = d3.select('svg'),
+			width = +svg.attr('width'),
+			height = +svg.attr('height');
+
+		// Настройка событий холста
+		var simulation = d3.forceSimulation()
+			.force('link', d3.forceLink()
+				.id(function (d) {
+					return d.id;
+				}))
+			.force('charge', d3.forceManyBody())
+			.force('center', d3.forceCenter(width / 2, height / 2));
+
+		d3.json(DATA_JSON_URL, function (error, graph) {
+			nodes = graph.nodes;
+
+			var color = d3.scaleOrdinal(d3.schemeCategory20);
+
+			// Создание линий
+			var link = svg.append('g')
+				.attr('class', 'links')
+				.selectAll('line')
+				.data(graph.links)
+				.enter()
+				.append('line');
+
+			// Создание нод
+			var node = svg.append('g')
+				.attr('class', 'nodes')
+				.selectAll('circle')
+				.data(graph.nodes)
+				.enter()
+				.append('circle')
+				.attr('r', 5)
+				.attr('fill', function (d) {
+					return color(d.group);
+				})
+				.call(d3.drag()
+					.on('start', dragstarted)
+					.on('drag', dragged)
+					.on('end', dragended));
+
+			// Заголовки для нод
+			node.append('title')
+				.text(function (d) {
+					return d.id;
+				});
+
+			// События для объектов
+			simulation
+				.nodes(graph.nodes)
+				.on('tick', function () {
+					// События для линий
+					link
+						.attr('name', function (d) {
+							return d.source.id;
+						})
+						.attr('x1', function (d) {
+							return d.source.x;
+						})
+						.attr('y1', function (d) {
+							return d.source.y;
+						})
+						.attr('x2', function (d) {
+							return d.target.x;
+						})
+						.attr('y2', function (d) {
+							return d.target.y;
+						});
+
+					// События для нод
+					node
+						.attr('name', function (d) {
+							return d.id;
+						})
+						.attr('cx', function (d) {
+							return d.x;
+						})
+						.attr('cy', function (d) {
+							return d.y;
+						});
+				});
+
+			// События на перетаскивания объектов
+			function dragstarted(d) {
+				if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+				d.fx = d.x;
+				d.fy = d.y;
+			}
+
+			function dragged(d) {
+				d.fx = d3.event.x;
+				d.fy = d3.event.y;
+			}
+
+			function dragended(d) {
+				if (!d3.event.active) simulation.alphaTarget(0);
+				d.fx = null;
+				d.fy = null;
+			}
+
+			simulation
+				.force('link')
+				.links(graph.links);
+
+			// Загрузка массива `id` для последовательного удаления нод
+			graph.nodes.forEach(function (node) {
+				removedStations.unshift(node.id);
+			});
+
+			// Удаление нод с задержкой
+			setTimeout(function () {
+				(function removeStationWithDelay(i) {
+					setTimeout(function () {
+						removeStation(removedStations[i - 1]);
+						--i && removeStationWithDelay(i);
+					}, REMOVE_STATION_INTERVAL)
+				})(removedStations.length);
+			}, REMOVE_STATION_DELAY);
+		});
+
+		// Удаление нод со смежными линиями
+		function removeStation(station) {
+			var removableElementIndex = nodes.findIndex(function (node) {
+				return node.id === station;
+			});
+
+			// Удаление ноды
+			svg.selectAll('[name="' + station + '"]').data([]).exit().remove();
+
+			// Удаление смежных линий
+			if (nodes[removableElementIndex - 1]) {
+				svg.selectAll('line[name="' + nodes[removableElementIndex - 1].id + '"]').data([]).exit().remove();
+			}
+
+			// Обновление холста
+			simulation.restart();
+		}
+	</script>
+</body>
+</html>
